@@ -8,6 +8,13 @@ using OpenAI's Whisper model, optimized for German language.
 
 import sys
 import shutil
+from pathlib import Path
+
+# Ensure the project root is on sys.path so 'src' package resolves
+# regardless of how the script is invoked.
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import Qt
