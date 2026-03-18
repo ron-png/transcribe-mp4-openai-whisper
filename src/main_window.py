@@ -2,7 +2,8 @@
 Main application window for the Whisper Transcription GUI.
 
 Provides the primary user interface with file queue, controls,
-progress tracking, settings dialog, and drag-and-drop support.
+progress tracking, live transcription view, settings dialog,
+and drag-and-drop support.
 """
 
 import os
@@ -35,6 +36,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QAbstractItemView,
     QSizePolicy,
+    QTabWidget,
 )
 
 from .scanner import scan_directory, scan_files
@@ -136,9 +138,7 @@ class SettingsDialog(QDialog):
         output_layout = QFormLayout(output_group)
         output_layout.setSpacing(12)
 
-        self.same_dir_check = QCheckBox(
-            "Save .txt next to video file"
-        )
+        self.same_dir_check = QCheckBox("Save .txt next to video file")
         output_layout.addRow(self.same_dir_check)
 
         self.skip_transcribed_check = QCheckBox(
@@ -258,7 +258,7 @@ class MainWindow(QMainWindow):
         self.settings = AppSettings()
         self._worker: TranscriberWorker | None = None
         self._is_transcribing = False
-        self._file_queue: list[str] = []  # Ordered list of file paths
+        self._file_queue: list[str] = []
 
         self.setWindowTitle("Whisper Transcriber")
         self.setMinimumSize(900, 600)
@@ -267,9 +267,7 @@ class MainWindow(QMainWindow):
             self.settings.get("window_height"),
         )
 
-        # Enable drag & drop
         self.setAcceptDrops(True)
-
         self._build_ui()
         self._update_button_states()
 
@@ -290,7 +288,9 @@ class MainWindow(QMainWindow):
         title_col.setSpacing(2)
         title_label = QLabel("Whisper Transcriber")
         title_label.setObjectName("titleLabel")
-        subtitle = QLabel("High-quality video transcription powered by OpenAI Whisper")
+        subtitle = QLabel(
+            "High-quality video transcription powered by OpenAI Whisper"
+        )
         subtitle.setObjectName("subtitleLabel")
         title_col.addWidget(title_label)
         title_col.addWidget(subtitle)
@@ -298,7 +298,7 @@ class MainWindow(QMainWindow):
 
         header.addStretch()
 
-        # Device indicator (GPU/CPU)
+        # Device indicator
         self.device_label = QLabel("")
         self.device_label.setObjectName("deviceLabel")
         self.device_label.setVisible(False)
@@ -351,11 +351,11 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(toolbar)
 
-        # ── Splitter: Queue table + Log panel ──
+        # ── Main splitter: Queue + Bottom panels ──
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setChildrenCollapsible(True)
 
-        # Queue table
+        # --- Queue table ---
         queue_container = QWidget()
         queue_layout = QVBoxLayout(queue_container)
         queue_layout.setContentsMargins(0, 0, 0, 0)
@@ -376,7 +376,6 @@ class MainWindow(QMainWindow):
         self.queue_table.verticalHeader().setVisible(False)
         self.queue_table.setShowGrid(False)
 
-        # Column sizing
         header_view = self.queue_table.horizontalHeader()
         header_view.setSectionResizeMode(
             self.COL_STATUS, QHeaderView.ResizeMode.ResizeToContents
@@ -392,9 +391,9 @@ class MainWindow(QMainWindow):
         )
         header_view.resizeSection(self.COL_PROGRESS, 140)
 
-        # Drop hint shown when queue is empty
         self.drop_hint = QLabel(
-            "Drag & drop video files or folders here\nor use the buttons above to add files"
+            "Drag & drop video files or folders here\n"
+            "or use the buttons above to add files"
         )
         self.drop_hint.setObjectName("dropHintLabel")
         self.drop_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -405,23 +404,25 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(queue_container)
 
-        # Log panel
-        log_container = QWidget()
-        log_layout = QVBoxLayout(log_container)
-        log_layout.setContentsMargins(0, 4, 0, 0)
-        log_layout.setSpacing(4)
+        # --- Tabbed bottom panel: Live Transcription + Log ---
+        self.bottom_tabs = QTabWidget()
+        self.bottom_tabs.setObjectName("bottomTabs")
 
-        log_header = QLabel("Log")
-        log_header.setObjectName("sectionLabel")
-        log_layout.addWidget(log_header)
+        # Live transcription tab
+        self.live_text = QTextEdit()
+        self.live_text.setReadOnly(True)
+        self.live_text.setPlaceholderText(
+            "Live transcription will appear here as segments are processed..."
+        )
+        self.bottom_tabs.addTab(self.live_text, "📝 Live Transcription")
 
+        # Log tab
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(180)
-        log_layout.addWidget(self.log_text)
+        self.bottom_tabs.addTab(self.log_text, "📋 Log")
 
-        splitter.addWidget(log_container)
-        splitter.setSizes([500, 150])
+        splitter.addWidget(self.bottom_tabs)
+        splitter.setSizes([400, 250])
 
         main_layout.addWidget(splitter, 1)
 
@@ -434,11 +435,6 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_label.setObjectName("statusLabel")
         progress_row.addWidget(self.status_label, 1)
-
-        self.elapsed_label = QLabel("")
-        self.elapsed_label.setObjectName("statusLabel")
-        progress_row.addWidget(self.elapsed_label)
-
         bottom.addLayout(progress_row)
 
         self.progress_bar = QProgressBar()
@@ -486,12 +482,10 @@ class MainWindow(QMainWindow):
 
         skip = self.settings.get("skip_transcribed")
 
-        # Scan directories
         for d in dirs_to_scan:
             found = scan_directory(d, skip_transcribed=skip)
             files_to_add.extend(found)
 
-        # Filter to valid video files
         valid = scan_files(files_to_add, skip_transcribed=skip)
         self._add_to_queue(valid)
 
@@ -542,7 +536,6 @@ class MainWindow(QMainWindow):
 
             p = Path(file_path)
 
-            # Status
             status_item = QTableWidgetItem("⏳ Pending")
             status_item.setFlags(
                 status_item.flags() & ~Qt.ItemFlag.ItemIsEditable
@@ -550,7 +543,6 @@ class MainWindow(QMainWindow):
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.queue_table.setItem(row, self.COL_STATUS, status_item)
 
-            # Filename
             name_item = QTableWidgetItem(p.name)
             name_item.setFlags(
                 name_item.flags() & ~Qt.ItemFlag.ItemIsEditable
@@ -558,7 +550,6 @@ class MainWindow(QMainWindow):
             name_item.setToolTip(str(file_path))
             self.queue_table.setItem(row, self.COL_FILENAME, name_item)
 
-            # Folder
             folder_item = QTableWidgetItem(str(p.parent))
             folder_item.setFlags(
                 folder_item.flags() & ~Qt.ItemFlag.ItemIsEditable
@@ -566,10 +557,9 @@ class MainWindow(QMainWindow):
             folder_item.setToolTip(str(p.parent))
             self.queue_table.setItem(row, self.COL_FOLDER, folder_item)
 
-            # Progress bar
             progress = QProgressBar()
             progress.setValue(0)
-            progress.setTextVisible(False)
+            progress.setTextVisible(True)
             self.queue_table.setCellWidget(row, self.COL_PROGRESS, progress)
 
         self._update_visibility()
@@ -631,9 +621,13 @@ class MainWindow(QMainWindow):
         self.start_btn.setVisible(False)
         self.stop_btn.setVisible(True)
         self.progress_bar.setValue(0)
-        self.elapsed_label.setText("")
 
-        # Reset all statuses to pending
+        # Clear live transcription
+        self.live_text.clear()
+        # Switch to live transcription tab
+        self.bottom_tabs.setCurrentIndex(0)
+
+        # Reset all statuses
         for row in range(self.queue_table.rowCount()):
             status_item = self.queue_table.item(row, self.COL_STATUS)
             if status_item:
@@ -664,17 +658,22 @@ class MainWindow(QMainWindow):
         self._worker.file_started.connect(self._on_file_started)
         self._worker.file_completed.connect(self._on_file_completed)
         self._worker.file_error.connect(self._on_file_error)
+        self._worker.file_progress.connect(self._on_file_progress)
         self._worker.all_completed.connect(self._on_all_completed)
         self._worker.log_message.connect(self._log)
         self._worker.model_loading.connect(self._on_model_loading)
         self._worker.model_loaded.connect(self._on_model_loaded)
+        self._worker.segment_transcribed.connect(self._on_segment_transcribed)
 
         self._worker.start()
 
     def _stop_transcription(self):
         if self._worker:
             self._worker.cancel()
-            self._log("Cancellation requested... waiting for current operation to finish.")
+            self._log(
+                "Cancellation requested... "
+                "waiting for current operation to finish."
+            )
             self.stop_btn.setEnabled(False)
 
     # ─── Worker Signal Handlers ───────────────────────────────
@@ -687,11 +686,25 @@ class MainWindow(QMainWindow):
         if index < self.queue_table.rowCount():
             status_item = self.queue_table.item(index, self.COL_STATUS)
             if status_item:
-                status_item.setText("🔄 Transcribing")
-            # Pulse the progress bar for the active file
+                status_item.setText("🔄 Processing")
             progress = self.queue_table.cellWidget(index, self.COL_PROGRESS)
             if progress:
-                progress.setMaximum(0)  # Indeterminate mode
+                progress.setMaximum(100)
+                progress.setValue(0)
+
+        # Add a separator in live transcription for each new file
+        filename = Path(file_path).name
+        self.live_text.append(
+            f"\n{'━' * 50}\n📄 {filename}\n{'━' * 50}\n"
+        )
+
+    def _on_file_progress(self, index: int, percentage: int):
+        """Update per-file progress bar with real percentage."""
+        if index < self.queue_table.rowCount():
+            progress = self.queue_table.cellWidget(index, self.COL_PROGRESS)
+            if progress:
+                progress.setMaximum(100)
+                progress.setValue(percentage)
 
     def _on_file_completed(self, index: int, file_path: str, output: str):
         if index < self.queue_table.rowCount():
@@ -727,7 +740,6 @@ class MainWindow(QMainWindow):
     def _on_model_loaded(self, model_name: str):
         self.model_status_label.setText(f"Model: {model_name} ✓")
 
-        # Show device info
         import torch
         if torch.cuda.is_available():
             gpu = torch.cuda.get_device_name(0)
@@ -737,6 +749,25 @@ class MainWindow(QMainWindow):
         else:
             self.device_label.setText("🖥 CPU")
         self.device_label.setVisible(True)
+
+    def _on_segment_transcribed(
+        self, index: int, text: str, start: float, end: float
+    ):
+        """Append a live transcription segment to the live text panel."""
+        timestamp = (
+            f"[{self._fmt_time(start)} → {self._fmt_time(end)}]"
+        )
+        self.live_text.append(f"{timestamp}  {text}")
+        # Auto-scroll
+        scrollbar = self.live_text.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    @staticmethod
+    def _fmt_time(seconds: float) -> str:
+        """Format seconds to MM:SS for compact live display."""
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        return f"{m:02d}:{s:02d}"
 
     # ─── Settings ─────────────────────────────────────────────
 
@@ -752,7 +783,6 @@ class MainWindow(QMainWindow):
 
     def _log(self, message: str):
         self.log_text.append(message)
-        # Auto-scroll to bottom
         scrollbar = self.log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
@@ -763,8 +793,10 @@ class MainWindow(QMainWindow):
             reply = QMessageBox.question(
                 self,
                 "Transcription in Progress",
-                "A transcription is still running. Are you sure you want to quit?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                "A transcription is still running. "
+                "Are you sure you want to quit?",
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.No:
@@ -773,7 +805,6 @@ class MainWindow(QMainWindow):
             self._worker.cancel()
             self._worker.wait(5000)
 
-        # Save window size
         self.settings.set("window_width", self.width())
         self.settings.set("window_height", self.height())
         self.settings.sync()

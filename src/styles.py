@@ -443,4 +443,42 @@ def get_stylesheet() -> str:
     QLineEdit:focus {{
         border-color: {c['border_focus']};
     }}
+
+    /* ═══════════════════════════════════════════════════════════
+       TAB WIDGET
+       ═══════════════════════════════════════════════════════════ */
+    QTabWidget {{
+        background-color: {c['bg_primary']};
+        border: none;
+    }}
+
+    QTabWidget::pane {{
+        background-color: {c['bg_primary']};
+        border: 1px solid {c['border']};
+        border-top: none;
+        border-radius: 0 0 6px 6px;
+    }}
+
+    QTabBar::tab {{
+        background-color: {c['bg_secondary']};
+        color: {c['text_secondary']};
+        border: 1px solid {c['border']};
+        border-bottom: none;
+        border-radius: 6px 6px 0 0;
+        padding: 8px 18px;
+        margin-right: 2px;
+        font-size: 12px;
+        font-weight: 500;
+    }}
+
+    QTabBar::tab:selected {{
+        background-color: {c['bg_primary']};
+        color: {c['accent']};
+        border-bottom: 2px solid {c['accent']};
+    }}
+
+    QTabBar::tab:hover:!selected {{
+        background-color: {c['bg_hover']};
+        color: {c['text_primary']};
+    }}
     """
